@@ -24,7 +24,8 @@ Rules for your questions:
 - Never ask more than two questions total
 - Return your response as a JSON object in this exact format:
   { "questions": ["question one", "question two"] }
-- Return only the JSON. No explanation, no preamble.`
+- Return only the JSON. No explanation, no preamble.
+- Return only raw JSON. No markdown. No code fences. No backticks. The first character of your response must be { and the last must be }.`
 
 export async function POST(request: Request) {
   try {
@@ -49,8 +50,17 @@ export async function POST(request: Request) {
       messages: [{ role: 'user', content: userMessage }],
     })
 
-    const raw = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-    const result = JSON.parse(raw)
+    const raw = message.content
+      .filter((block: { type: string }) => block.type === 'text')
+      .map((block: { type: string; text: string }) => block.text)
+      .join('')
+
+    const cleaned = raw
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim()
+
+    const result = JSON.parse(cleaned)
 
     return NextResponse.json(result)
   } catch (err) {
