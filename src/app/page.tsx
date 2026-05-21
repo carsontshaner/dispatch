@@ -6,7 +6,13 @@ const TONES = [
   { id: 'warm', label: 'Warm & personal' },
   { id: 'professional', label: 'Professional' },
   { id: 'playful', label: 'Fun & playful' },
-  { id: 'direct', label: 'No-nonsense' },
+  { id: 'voice', label: 'Find my voice' },
+]
+
+const LENGTHS = [
+  { id: 'short', label: 'Short' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'lengthy', label: 'Lengthy' },
 ]
 
 interface Output {
@@ -36,6 +42,7 @@ export default function Home() {
     promotions: '',
     cta: '',
     tone: 'warm',
+    newsletterLength: 'short',
   })
   const [step, setStep] = useState<Step>('idle')
   const [questions, setQuestions] = useState<string[]>([])
@@ -57,6 +64,7 @@ export default function Home() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (form.tone === 'voice') return
     setStep('fetching')
     setError(null)
     setOutput(null)
@@ -111,7 +119,10 @@ export default function Home() {
     ? `${form.businessName} <hello@${form.businessName.toLowerCase().replace(/\s+/g, '') + '.com'}>`
     : 'Your Business <hello@yourbusiness.com>'
 
-  const generateBg = step === 'fetching' ? '#4A8CB5' : btnHovered ? '#5A9FD4' : '#69B3E7'
+  const isVoiceTone = form.tone === 'voice'
+  const generateDisabled = step === 'fetching' || isVoiceTone
+  const generateBg = step === 'fetching' ? '#4A8CB5' : isVoiceTone ? '#111111' : btnHovered ? '#5A9FD4' : '#69B3E7'
+  const generateColor = isVoiceTone ? '#333333' : '#000000'
   const showQuestionCard = step === 'questions' || step === 'generating'
 
   return (
@@ -190,6 +201,21 @@ export default function Home() {
               </div>
             </Field>
 
+            {isVoiceTone && <FindMyVoiceCard />}
+
+            <Field label="Newsletter Length">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {LENGTHS.map(l => (
+                  <ToneButton
+                    key={l.id}
+                    label={l.label}
+                    selected={form.newsletterLength === l.id}
+                    onClick={() => update('newsletterLength', l.id)}
+                  />
+                ))}
+              </div>
+            </Field>
+
             {error && (
               <p style={{ color: '#E06050', fontSize: 12, margin: 0, fontFamily: MONO }}>
                 {error}
@@ -199,13 +225,14 @@ export default function Home() {
             {!showQuestionCard && (
               <button
                 type="submit"
-                disabled={step === 'fetching'}
+                disabled={generateDisabled}
                 onMouseEnter={() => setBtnHovered(true)}
                 onMouseLeave={() => setBtnHovered(false)}
                 style={{
                   ...s.generateBtn,
                   backgroundColor: generateBg,
-                  cursor: step === 'fetching' ? 'not-allowed' : 'pointer',
+                  color: generateColor,
+                  cursor: generateDisabled ? 'not-allowed' : 'pointer',
                 }}
               >
                 {step === 'fetching' ? (
@@ -388,7 +415,8 @@ function QuestionCard({ questions, answers, onChange, onSubmit, loading }: {
   loading: boolean
 }) {
   const [hovered, setHovered] = useState(false)
-  const label = questions.length === 1 ? 'One quick thing' : 'Two quick things'
+  const QUESTION_LABELS: Record<number, string> = { 1: 'One quick thing', 2: 'Two quick things', 3: 'Three quick things', 4: 'Four quick things' }
+  const label = QUESTION_LABELS[questions.length] ?? `${questions.length} quick things`
   const bg = loading ? '#4A8CB5' : hovered ? '#5A9FD4' : '#69B3E7'
 
   return (
@@ -433,6 +461,26 @@ function QuestionCard({ questions, answers, onChange, onSubmit, loading }: {
           </span>
         ) : 'Write My Newsletter'}
       </button>
+    </div>
+  )
+}
+
+function FindMyVoiceCard() {
+  return (
+    <div style={{
+      border: '1px solid #1A1A1A',
+      backgroundColor: '#0A0A0A',
+      padding: '20px 22px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#69B3E7', fontFamily: MONO }}>
+        Coming Soon
+      </span>
+      <p style={{ fontSize: 14, fontFamily: 'Georgia, serif', fontStyle: 'italic', color: '#A8A8A8', lineHeight: 1.6, margin: 0 }}>
+        Connect your website or social media and Dispatch will write in your exact voice — automatically.
+      </p>
     </div>
   )
 }

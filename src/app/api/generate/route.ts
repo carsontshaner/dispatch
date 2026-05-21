@@ -7,10 +7,28 @@ const TONE_LABELS: Record<string, string> = {
   warm: 'Warm & personal',
   professional: 'Professional & polished',
   playful: 'Fun & playful',
-  direct: 'Straight to the point',
+  voice: 'Find my voice',
 }
 
-const SYSTEM_PROMPT = `You are a ghostwriter for small business owners. You write their weekly \
+const WORD_COUNT_RULES: Record<string, string> = {
+  short: 'Under 200 words. Shorter is almost always better. When in doubt, cut the last paragraph.',
+  medium: 'Under 500 words. Use the space to add specific detail, texture, and a second idea if \
+the owner provided one. Do not pad. Every sentence should earn its place.',
+  lengthy: 'Under 1000 words. This is a proper newsletter. Develop ideas fully. Tell a story if \
+there is one. Include detail that makes the reader feel like they were there. Still no filler \
+— length comes from substance, not repetition.',
+}
+
+const MAX_TOKENS: Record<string, number> = {
+  short: 1024,
+  medium: 2048,
+  lengthy: 4096,
+}
+
+function buildSystemPrompt(newsletterLength: string): string {
+  const wordCountRule = WORD_COUNT_RULES[newsletterLength] ?? WORD_COUNT_RULES.short
+
+  return `You are a ghostwriter for small business owners. You write their weekly \
 customer newsletters. Your only job is to sound like a real human being wrote this — not a \
 marketing department, not an AI, not a brand. A person.
 
@@ -168,7 +186,7 @@ See you soon.
 
 Now follow these rules on every newsletter you write:
 
-- Under 200 words. Shorter is almost always better. When in doubt, cut the last paragraph.
+- ${wordCountRule}
 
 - Write as a single cohesive piece. Ideas should connect naturally the way a person talks when \
 they have a few things to mention. Transitions are invisible. Never use "speaking of which", \
@@ -191,6 +209,12 @@ even, break it.
 croissant, finally" is better than "something special just came out of our kitchen". Specific \
 beats clever every time.
 
+- Subject line capitalization must match the tone:
+    Warm & personal: sentence case only. e.g. "The almond thing is back"
+    Professional & polished: title case. e.g. "Mid-Year Review Slots Now Open"
+    Fun & playful: all lowercase. e.g. "something came in and we're obsessed"
+    Find my voice: sentence case as default until voice is established
+
 - Place the desired action in the final third. It should feel like a natural conclusion. Never \
 open with it.
 
@@ -205,13 +229,17 @@ actually works year-round". Be specific, not evocative.
 
 - Do not build to anything dramatically. The ending is a natural stop, not a landing.
 
+- Only use information the owner has explicitly provided. Do not invent specific details — no \
+made-up dates, durations, quantities, names, or backstory. If a detail would make the \
+newsletter better but was not provided, ask for it in the follow-up questions step instead. A \
+newsletter with less detail is better than one with fabricated detail.
+
 - Tone guidance:
     Warm & personal: conversational, neighborly, occasionally uses "I", feels like a note \
 from someone you know
     Professional & polished: confident, clean, no slang, sounds like a competent human not \
 a corporation
     Fun & playful: light, specific, a little dry, never try-hard or exclamation-heavy
-    Straight to the point: short, direct, zero filler, no throat-clearing
 
 - Never use em dashes.
 - Never use colons to introduce a list.
@@ -228,11 +256,14 @@ journey in a metaphorical sense.
   Subject: [subject line]
   [blank line]
   [newsletter body]`
+}
 
 export async function POST(request: Request) {
   try {
-    const { businessName, businessType, weeklyUpdate, promotions, cta, tone, followUpAnswers } =
-      await request.json()
+    const {
+      businessName, businessType, weeklyUpdate, promotions, cta, tone,
+      newsletterLength, followUpAnswers,
+    } = await request.json()
 
     const lines: (string | null)[] = [
       `Business: ${businessName} (${businessType})`,
@@ -255,9 +286,9 @@ export async function POST(request: Request) {
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: MAX_TOKENS[newsletterLength] ?? MAX_TOKENS.short,
       temperature: 1,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(newsletterLength ?? 'short'),
       messages: [{ role: 'user', content: userMessage }],
     })
 
