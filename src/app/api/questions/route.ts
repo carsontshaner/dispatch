@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
     const raw = message.content
       .filter((block: { type: string }) => block.type === 'text')
-      .map((block: { type: string; text: string }) => block.text)
+      .map((block: { type: string; text?: string }) => block.text ?? '')
       .join('')
 
     const cleaned = raw
