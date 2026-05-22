@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
+import { MODEL } from '@/lib/version'
 
 const client = new Anthropic()
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       .join('\n')
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 512,
       system: buildSystemPrompt(newsletterLength ?? 'short'),
       messages: [{ role: 'user', content: userMessage }],

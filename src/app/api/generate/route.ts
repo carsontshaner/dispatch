@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { MODEL, PROMPT_VERSION, INTAKE_VERSION } from '@/lib/version'
 
 const client = new Anthropic()
 
@@ -25,6 +27,7 @@ const MAX_TOKENS: Record<string, number> = {
   lengthy: 4096,
 }
 
+// NOTE: Any edit to this prompt must bump PROMPT_VERSION in src/lib/version.ts
 function buildSystemPrompt(newsletterLength: string): string {
   const wordCountRule = WORD_COUNT_RULES[newsletterLength] ?? WORD_COUNT_RULES.short
 
@@ -262,7 +265,7 @@ export async function POST(request: Request) {
   try {
     const {
       businessName, businessType, weeklyUpdate, promotions, cta, tone,
-      newsletterLength, followUpAnswers,
+      newsletterLength, followUpAnswers, sessionId, generationId,
     } = await request.json()
 
     const lines: (string | null)[] = [
@@ -284,13 +287,15 @@ export async function POST(request: Request) {
 
     const userMessage = lines.filter(line => line !== null).join('\n')
 
+    const t0 = Date.now()
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: MAX_TOKENS[newsletterLength] ?? MAX_TOKENS.short,
       temperature: 1,
       system: buildSystemPrompt(newsletterLength ?? 'short'),
       messages: [{ role: 'user', content: userMessage }],
     })
+    const latencyMs = Date.now() - t0
 
     const raw = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
 
@@ -298,7 +303,57 @@ export async function POST(request: Request) {
     const subject = raw.slice(0, firstNewline).replace(/^Subject:\s*/i, '').trim()
     const body = raw.slice(firstNewline).trimStart()
 
-    return NextResponse.json({ subject, body })
+    const draftText = `Subject: ${subject}\n\n${body}`
+    const tokensIn = message.usage?.input_tokens ?? null
+    const tokensOut = message.usage?.output_tokens ?? null
+
+    const supabase = createServiceClient()
+    let rowId: string | null = generationId ?? null
+
+    if (generationId) {
+      const { data: current } = await supabase
+        .from('generations')
+        .select('regeneration_count')
+        .eq('id', generationId)
+        .single()
+
+      await supabase
+        .from('generations')
+        .update({
+          draft_text: draftText,
+          regeneration_count: (current?.regeneration_count ?? 0) + 1,
+          draft_tokens_in: tokensIn,
+          draft_tokens_out: tokensOut,
+          draft_latency_ms: latencyMs,
+          intake_json: { businessName, businessType, weeklyUpdate, promotions, cta, tone, newsletterLength, followUpAnswers },
+          tone,
+          length_option: newsletterLength,
+        })
+        .eq('id', generationId)
+    } else {
+      const { data, error } = await supabase
+        .from('generations')
+        .insert({
+          session_id: sessionId ?? null,
+          intake_json: { businessName, businessType, weeklyUpdate, promotions, cta, tone, newsletterLength, followUpAnswers },
+          tone,
+          length_option: newsletterLength,
+          intake_version: INTAKE_VERSION,
+          prompt_version: PROMPT_VERSION,
+          model: MODEL,
+          draft_text: draftText,
+          draft_tokens_in: tokensIn,
+          draft_tokens_out: tokensOut,
+          draft_latency_ms: latencyMs,
+        })
+        .select('id')
+        .single()
+
+      if (error) console.error('[generate] supabase insert error', error)
+      else rowId = data?.id ?? null
+    }
+
+    return NextResponse.json({ subject, body, generationId: rowId })
   } catch (err) {
     console.error('[generate]', err)
     return NextResponse.json({ error: 'Failed to generate newsletter' }, { status: 500 })
