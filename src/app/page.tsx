@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const TONES = [
   { id: 'warm', label: 'Warm & personal' },
@@ -51,6 +51,17 @@ export default function Home() {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [btnHovered, setBtnHovered] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [generationId, setGenerationId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let id = sessionStorage.getItem('dispatch_session_id')
+    if (!id) {
+      id = crypto.randomUUID()
+      sessionStorage.setItem('dispatch_session_id', id)
+    }
+    setSessionId(id)
+  }, [])
 
   const preview = output ?? PLACEHOLDER
 
@@ -97,10 +108,12 @@ export default function Home() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, followUpAnswers }),
+        body: JSON.stringify({ ...form, followUpAnswers, sessionId, generationId }),
       })
       if (!res.ok) throw new Error('Generation failed')
-      setOutput(await res.json())
+      const data = await res.json()
+      setOutput({ subject: data.subject, body: data.body })
+      if (data.generationId) setGenerationId(data.generationId)
       setStep('idle')
     } catch {
       setError('Something went wrong — please try again.')
