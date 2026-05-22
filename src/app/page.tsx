@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const TONES = [
   { id: 'warm', label: 'Warm & personal' },
@@ -53,6 +53,10 @@ export default function Home() {
   const [btnHovered, setBtnHovered] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [generationId, setGenerationId] = useState<string | null>(null)
+  const [editedSubject, setEditedSubject] = useState('')
+  const [editedBody, setEditedBody] = useState('')
+  const [originalDraft, setOriginalDraft] = useState<string | null>(null)
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     let id = sessionStorage.getItem('dispatch_session_id')
@@ -63,7 +67,12 @@ export default function Home() {
     setSessionId(id)
   }, [])
 
-  const preview = output ?? PLACEHOLDER
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [editedBody])
 
   function update(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -113,6 +122,9 @@ export default function Home() {
       if (!res.ok) throw new Error('Generation failed')
       const data = await res.json()
       setOutput({ subject: data.subject, body: data.body })
+      setEditedSubject(data.subject)
+      setEditedBody(data.body)
+      setOriginalDraft(`Subject: ${data.subject}\n\n${data.body}`)
       if (data.generationId) setGenerationId(data.generationId)
       setStep('idle')
     } catch {
@@ -123,9 +135,17 @@ export default function Home() {
 
   async function handleCopy() {
     if (!output) return
-    await navigator.clipboard.writeText(`Subject: ${output.subject}\n\n${output.body}`)
+    const finalText = `Subject: ${editedSubject}\n\n${editedBody}`
+    await navigator.clipboard.writeText(finalText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+    if (generationId) {
+      fetch('/api/capture-edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generationId, finalText }),
+      }).catch(err => console.error('[capture-edit]', err))
+    }
   }
 
   const fromAddress = form.businessName
@@ -298,7 +318,11 @@ export default function Home() {
           <div style={s.emailCard}>
             <div style={s.emailMeta}>
               <MetaRow label="From" value={fromAddress} monospace dim={!output} />
-              <MetaRow label="Subject" value={preview.subject} serif dim={!output} last />
+              {output ? (
+                <MetaRow label="Subject" value={editedSubject} serif last onChange={setEditedSubject} />
+              ) : (
+                <MetaRow label="Subject" value={PLACEHOLDER.subject} serif dim last />
+              )}
             </div>
 
             <div style={s.emailBody}>
@@ -306,9 +330,17 @@ export default function Home() {
                 <ThinkingState />
               ) : step === 'generating' ? (
                 <LoadingState />
+              ) : output ? (
+                <textarea
+                  ref={bodyRef}
+                  value={editedBody}
+                  onChange={e => setEditedBody(e.target.value)}
+                  style={s.editableBody}
+                  spellCheck={false}
+                />
               ) : (
-                <pre style={{ ...s.bodyText, color: output ? '#D0D0D0' : '#252525' }}>
-                  {preview.body}
+                <pre style={{ ...s.bodyText, color: '#252525' }}>
+                  {PLACEHOLDER.body}
                 </pre>
               )}
             </div>
@@ -498,13 +530,14 @@ function FindMyVoiceCard() {
   )
 }
 
-function MetaRow({ label, value, dim, last, monospace, serif }: {
+function MetaRow({ label, value, dim, last, monospace, serif, onChange }: {
   label: string
   value: string
   dim?: boolean
   last?: boolean
   monospace?: boolean
   serif?: boolean
+  onChange?: (v: string) => void
 }) {
   return (
     <div style={{
@@ -518,16 +551,34 @@ function MetaRow({ label, value, dim, last, monospace, serif }: {
       <span style={{ fontSize: 10, color: '#383838', width: 54, flexShrink: 0, fontFamily: MONO, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
         {label}
       </span>
-      <span style={{
-        fontSize: serif ? 14 : 12,
-        fontFamily: serif ? 'Georgia, serif' : MONO,
-        color: dim ? '#202020' : (serif ? '#F0F0F0' : '#666'),
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}>
-        {value}
-      </span>
+      {onChange ? (
+        <input
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: serif ? 14 : 12,
+            fontFamily: serif ? 'Georgia, serif' : MONO,
+            color: '#F0F0F0',
+            backgroundColor: 'transparent',
+            border: 'none',
+            outline: 'none',
+            padding: 0,
+          }}
+        />
+      ) : (
+        <span style={{
+          fontSize: serif ? 14 : 12,
+          fontFamily: serif ? 'Georgia, serif' : MONO,
+          color: dim ? '#202020' : (serif ? '#F0F0F0' : '#666'),
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {value}
+        </span>
+      )}
     </div>
   )
 }
@@ -732,6 +783,22 @@ const s: Record<string, React.CSSProperties> = {
     lineHeight: 1.75,
     whiteSpace: 'pre-wrap',
     margin: 0,
+  },
+  editableBody: {
+    fontFamily: 'Georgia, serif',
+    fontSize: 15,
+    lineHeight: 1.75,
+    color: '#D0D0D0',
+    backgroundColor: 'transparent',
+    border: 'none',
+    outline: 'none',
+    width: '100%',
+    padding: 0,
+    margin: 0,
+    resize: 'none',
+    overflow: 'hidden',
+    whiteSpace: 'pre-wrap',
+    display: 'block',
   },
   hint: {
     marginTop: 14,
