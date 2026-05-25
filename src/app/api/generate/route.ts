@@ -307,17 +307,21 @@ export async function POST(request: Request) {
     const tokensIn = message.usage?.input_tokens ?? null
     const tokensOut = message.usage?.output_tokens ?? null
 
+    console.log('[generate] creating service client')
     const supabase = createServiceClient()
+    console.log('[generate] service client created OK')
     let rowId: string | null = generationId ?? null
 
     if (generationId) {
-      const { data: current } = await supabase
+      console.log('[generate] UPDATE path — existing generationId:', generationId)
+      const { data: current, error: selectError } = await supabase
         .from('generations')
         .select('regeneration_count')
         .eq('id', generationId)
         .single()
+      console.log('[generate] select for update — data:', JSON.stringify(current), 'error:', JSON.stringify(selectError))
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('generations')
         .update({
           draft_text: draftText,
@@ -330,7 +334,9 @@ export async function POST(request: Request) {
           length_option: newsletterLength,
         })
         .eq('id', generationId)
+      console.log('[generate] update result — error:', JSON.stringify(updateError))
     } else {
+      console.log('[generate] INSERT path — attempting insert, sessionId:', sessionId)
       const { data, error } = await supabase
         .from('generations')
         .insert({
@@ -348,9 +354,11 @@ export async function POST(request: Request) {
         })
         .select('id')
         .single()
+      console.log('[generate] insert result — data:', JSON.stringify(data), 'error:', JSON.stringify(error))
 
-      if (error) console.error('[generate] supabase insert error', error)
+      if (error) console.error('[generate] INSERT FAILED:', error.code, error.message, error.details)
       else rowId = data?.id ?? null
+      console.log('[generate] rowId after insert:', rowId)
     }
 
     return NextResponse.json({ subject, body, generationId: rowId })

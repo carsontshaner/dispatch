@@ -2,7 +2,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff --schema public",
+    "db:new": "supabase migration new"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
@@ -18,6 +21,7 @@
     "typescript": "^6.0.3"
   },
   "devDependencies": {
-    "@types/node": "25.7.0"
+    "@types/node": "25.7.0",
+    "supabase": "^2.101.0"
   }
 }

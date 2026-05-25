@@ -19,8 +19,10 @@ function levenshtein(a: string, b: string): number {
 export async function POST(request: Request) {
   try {
     const { generationId, finalText } = await request.json()
+    console.log('[capture-edit] received — generationId:', generationId, 'finalText.length:', finalText?.length)
 
     if (!generationId || typeof finalText !== 'string') {
+      console.error('[capture-edit] invalid request body')
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
@@ -31,9 +33,10 @@ export async function POST(request: Request) {
       .select('draft_text')
       .eq('id', generationId)
       .single()
+    console.log('[capture-edit] fetch row — data:', row ? 'found' : 'null', 'error:', JSON.stringify(fetchError))
 
     if (fetchError || !row) {
-      console.error('[capture-edit] row not found', generationId, fetchError)
+      console.error('[capture-edit] row not found:', generationId, fetchError?.code, fetchError?.message)
       return NextResponse.json({ error: 'Generation not found' }, { status: 400 })
     }
 
@@ -41,6 +44,7 @@ export async function POST(request: Request) {
     const wasEdited = finalText !== draftText
     const editDistance = levenshtein(draftText, finalText)
     const editRatio = draftText.length > 0 ? editDistance / draftText.length : 0
+    console.log('[capture-edit] computed — wasEdited:', wasEdited, 'editDistance:', editDistance, 'editRatio:', editRatio.toFixed(4))
 
     const { error: updateError } = await supabase
       .from('generations')
@@ -53,8 +57,9 @@ export async function POST(request: Request) {
         analysis_status: wasEdited ? 'pending' : 'skipped',
       })
       .eq('id', generationId)
+    console.log('[capture-edit] update result — error:', JSON.stringify(updateError))
 
-    if (updateError) console.error('[capture-edit] update error', updateError)
+    if (updateError) console.error('[capture-edit] UPDATE FAILED:', updateError.code, updateError.message, updateError.details)
 
     return NextResponse.json({ ok: true })
   } catch (err) {
